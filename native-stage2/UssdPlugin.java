@@ -2,14 +2,18 @@ package com.nadidstudio.swiftpay;
 
 import android.Manifest;
 import android.content.Context;
+import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.telecom.PhoneAccountHandle;
+import android.telecom.TelecomManager;
 import android.telephony.TelephonyManager;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import java.util.List;
 
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -75,41 +79,15 @@ public class UssdPlugin extends Plugin {
             TelephonyManager telephonyManager =
                 (TelephonyManager) getContext().getSystemService(Context.TELEPHONY_SERVICE);
 
-            // اختيار أول شريحة فعّالة حتى يتم إرسال USSD عبر SIM محددة
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                try {
-                    SubscriptionManager sm =
-                        (SubscriptionManager) getContext().getSystemService(
-                            Context.TELEPHONY_SUBSCRIPTION_SERVICE
-                        );
-
-                    if (sm != null &&
-                        getContext().checkSelfPermission(Manifest.permission.READ_PHONE_STATE)
-                            == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-
-                        List<SubscriptionInfo> subs = sm.getActiveSubscriptionInfoList();
-
-                        if (subs != null && !subs.isEmpty()) {
-                            SubscriptionInfo selected = subs.get(0);
-
-                            // تفضيل شريحة Jawwal إذا كانت موجودة
-                            for (SubscriptionInfo info : subs) {
-                                CharSequence carrier = info.getCarrierName();
-                                if (carrier != null &&
-                                    carrier.toString().toLowerCase().contains("jawwal")) {
-                                    selected = info;
-                                    break;
-                                }
-                            }
-
-                            int subId = selected.getSubscriptionId();
-                            telephonyManager =
-                                telephonyManager.createForSubscriptionId(subId);
-                        }
-                    }
-                } catch (Exception ignored) {
-                }
+            // الشريحة: لا نفترض أبداً أن الأولى هي الصحيحة، ولا نبدّل شريحة بأخرى بصمت.
+            // نستخدم فقط الشريحة التي اختارها المستخدم (subscriptionId)، أو الشريحة الوحيدة
+            // إن كان في الجهاز شريحة واحدة. أي حالة أخرى = لا يُنفَّذ شيء ويُرجَع simError.
+            SimResolution sim = resolveSim(call);
+            if (sim.info == null) {
+                resolveSimError(call, sim.error);
+                return;
             }
+            telephonyManager = telephonyManager.createForSubscriptionId(sim.info.getSubscriptionId());
 
             // حارس ضد استدعاء call.resolve أكثر من مرة (سباق بين رد الشبكة الحقيقي
             // ومهلة الانتظار إن وصلا بنفس اللحظة تقريباً).
@@ -209,8 +187,26 @@ public class UssdPlugin extends Plugin {
 
     private void performInteractiveCall(PluginCall call, String code) {
         try {
+            SimResolution sim = resolveSim(call);
+            if (sim.info == null) {
+                resolveSimError(call, sim.error);
+                return;
+            }
+
             android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_CALL);
             intent.setData(android.net.Uri.parse("tel:" + android.net.Uri.encode(code)));
+
+            // ربط الاتصال بالشريحة المختارة. إن تعذّر إيجاد حساب الاتصال المطابق فلا نخمّن:
+            // نكمل فقط إذا كانت المختارة هي شريحة الاتصال الافتراضية في النظام (فسيستخدمها أندرويد
+            // حتماً)، وإلا نوقف العملية برسالة واضحة بدل الاتصال من شريحة أخرى.
+            int subId = sim.info.getSubscriptionId();
+            PhoneAccountHandle handle = findPhoneAccountHandle(sim.info);
+            if (handle != null) {
+                intent.putExtra(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, handle);
+            } else if (SubscriptionManager.getDefaultVoiceSubscriptionId() != subId) {
+                resolveSimError(call, "sim_bind_failed");
+                return;
+            }
 
             android.app.Activity activity = getActivity();
             if (activity != null) {
@@ -239,6 +235,163 @@ public class UssdPlugin extends Plugin {
             ret.put("error", e.getMessage() != null ? e.getMessage() : "dial_error");
             call.resolve(ret);
         }
+    }
+
+    // ===== إدارة شرائح SIM =====
+
+    private static final class SimResolution {
+        SubscriptionInfo info;
+        String error;
+    }
+
+    // الشرائح الفعّالة، أو null إن لم تتوفر الصلاحية/الخدمة.
+    private List<SubscriptionInfo> activeSubs() {
+        try {
+            if (getContext().checkSelfPermission(Manifest.permission.READ_PHONE_STATE)
+                    != PackageManager.PERMISSION_GRANTED) {
+                return null;
+            }
+            SubscriptionManager sm = (SubscriptionManager) getContext().getSystemService(
+                Context.TELEPHONY_SUBSCRIPTION_SERVICE);
+            if (sm == null) return null;
+            return sm.getActiveSubscriptionInfoList();
+        } catch (SecurityException e) {
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    // تحديد الشريحة المطلوبة دون أي افتراض أو بديل تلقائي:
+    //  - لا شرائح فعّالة                        -> no_sim
+    //  - لم يُرسَل subscriptionId وفي الجهاز 2+ -> needs_selection
+    //  - لم يُرسَل subscriptionId وشريحة واحدة  -> هي الشريحة
+    //  - subscriptionId غير موجود (أُخرجت)      -> sim_unavailable
+    //  - موجود لكن مكانه (slot) تغيّر            -> sim_changed
+    private SimResolution resolveSim(PluginCall call) {
+        SimResolution r = new SimResolution();
+        List<SubscriptionInfo> subs = activeSubs();
+        if (subs == null || subs.isEmpty()) {
+            r.error = "no_sim";
+            return r;
+        }
+        Integer wantedId = call.getInt("subscriptionId");
+        Integer wantedSlot = call.getInt("slotIndex");
+        if (wantedId == null) {
+            if (subs.size() == 1) {
+                r.info = subs.get(0);
+            } else {
+                r.error = "needs_selection";
+            }
+            return r;
+        }
+        for (SubscriptionInfo info : subs) {
+            if (info.getSubscriptionId() == wantedId.intValue()) {
+                if (wantedSlot != null && info.getSimSlotIndex() != wantedSlot.intValue()) {
+                    r.error = "sim_changed";
+                    return r;
+                }
+                r.info = info;
+                return r;
+            }
+        }
+        r.error = "sim_unavailable";
+        return r;
+    }
+
+    private void resolveSimError(PluginCall call, String error) {
+        JSObject ret = new JSObject();
+        ret.put("supported", true);
+        ret.put("permissionGranted", true);
+        ret.put("simError", error);
+        call.resolve(ret);
+    }
+
+    // حساب الاتصال (PhoneAccountHandle) المطابق للشريحة، أو null إن تعذّر التأكد.
+    private PhoneAccountHandle findPhoneAccountHandle(SubscriptionInfo info) {
+        try {
+            TelecomManager telecom = (TelecomManager) getContext().getSystemService(Context.TELECOM_SERVICE);
+            if (telecom == null) return null;
+            List<PhoneAccountHandle> handles = telecom.getCallCapablePhoneAccounts();
+            if (handles == null || handles.isEmpty()) return null;
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                TelephonyManager base =
+                    (TelephonyManager) getContext().getSystemService(Context.TELEPHONY_SERVICE);
+                for (PhoneAccountHandle h : handles) {
+                    if (base.getSubscriptionId(h) == info.getSubscriptionId()) return h;
+                }
+                return null;
+            }
+
+            // أندرويد أقدم من 11: المطابقة الموثوقة الوحيدة هي ICCID إن كان متاحاً.
+            String icc = info.getIccId();
+            if (icc != null && !icc.isEmpty()) {
+                for (PhoneAccountHandle h : handles) {
+                    String id = h.getId();
+                    if (id != null && (id.equals(icc) || id.startsWith(icc))) return h;
+                }
+            }
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    // قائمة الشرائح الفعّالة لعرضها واختيار إحداها.
+    @PluginMethod
+    public void getSims(PluginCall call) {
+        if (!hasRequiredPermissions()) {
+            requestAllPermissions(call, "simsPermsCallback");
+            return;
+        }
+        returnSims(call);
+    }
+
+    @PermissionCallback
+    private void simsPermsCallback(PluginCall call) {
+        if (!hasRequiredPermissions()) {
+            JSObject ret = new JSObject();
+            ret.put("supported", true);
+            ret.put("permissionGranted", false);
+            ret.put("sims", new JSArray());
+            call.resolve(ret);
+            return;
+        }
+        returnSims(call);
+    }
+
+    private void returnSims(PluginCall call) {
+        JSObject ret = new JSObject();
+        JSArray arr = new JSArray();
+        try {
+            List<SubscriptionInfo> subs = activeSubs();
+            if (subs != null) {
+                for (SubscriptionInfo info : subs) {
+                    JSObject o = new JSObject();
+                    o.put("subscriptionId", info.getSubscriptionId());
+                    o.put("slotIndex", info.getSimSlotIndex());
+                    CharSequence carrier = info.getCarrierName();
+                    CharSequence display = info.getDisplayName();
+                    o.put("carrierName", carrier != null ? carrier.toString() : "");
+                    o.put("displayName", display != null ? display.toString() : "");
+                    String number = "";
+                    try {
+                        String n = info.getNumber();
+                        if (n != null) number = n;
+                    } catch (Exception ignored) {
+                    }
+                    o.put("number", number);
+                    arr.put(o);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        ret.put("supported", true);
+        ret.put("permissionGranted", true);
+        ret.put("sims", arr);
+        ret.put("defaultVoiceSubId", SubscriptionManager.getDefaultVoiceSubscriptionId());
+        call.resolve(ret);
     }
 
 }

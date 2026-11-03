@@ -1,7 +1,7 @@
 {
   "name": "SwiftPay - مولد أكواد التحويل الذكي",
   "short_name": "SwiftPay",
-  "description": "تطبيق SwiftPay لإنشاء أكواد USSD لتحويلات جوال بي وبال بي بسرعة وأمان، ويعمل بالكامل دون إنترنت.",
+  "description": "تطبيق SwiftPay لإنشاء أكواد USSD لتحويلات جوال باي وبال باي بسرعة وأمان، ويعمل بالكامل دون إنترنت.",
   "start_url": "/index.html",
   "id": "/index.html",
   "scope": "/",
@@ -51,14 +51,14 @@
   ],
   "shortcuts": [
     {
-      "name": "تحويل جوال بي",
-      "short_name": "جوال بي",
+      "name": "تحويل جوال باي",
+      "short_name": "جوال باي",
       "url": "/index.html?service=jawwal",
       "icons": [{ "src": "../assets/icons/icon-192.png", "sizes": "192x192" }]
     },
     {
-      "name": "تحويل بال بي",
-      "short_name": "بال بي",
+      "name": "تحويل بال باي",
+      "short_name": "بال باي",
       "url": "/index.html?service=palpay",
       "icons": [{ "src": "../assets/icons/icon-192.png", "sizes": "192x192" }]
     }

@@ -30,6 +30,8 @@ function swiftpayWriteSettings(settings) {
   const isDark = settings.darkMode === true;
   document.documentElement.classList.toggle('light-theme', !isDark);
   document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
+  const csMeta0 = document.querySelector('meta[name="color-scheme"]');
+  if (csMeta0) csMeta0.setAttribute('content', isDark ? 'dark' : 'light');
   // نُبقي وسم meta الخاص بلون الثيم متزامناً مع الوضع الحالي (لشريط حالة الأندرويد)
   const themeColor = isDark ? '#080D1A' : '#F8FAFC';
   const metaTag = document.querySelector('meta[name="theme-color"]');
@@ -41,7 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const settings = swiftpayReadSettings();
   const isDark = settings.darkMode === true;
   document.body.classList.toggle('light-theme', !isDark);
-  document.documentElement.classList.remove('light-theme');
+  document.documentElement.classList.toggle('light-theme', !isDark);
 });
 
 /**
@@ -53,6 +55,9 @@ function swiftpaySetTheme(isDarkMode) {
   settings.darkMode = isDarkMode;
   swiftpayWriteSettings(settings);
   document.body.classList.toggle('light-theme', !isDarkMode);
+  document.documentElement.classList.toggle('light-theme', !isDarkMode);
+  const csMeta = document.querySelector('meta[name="color-scheme"]');
+  if (csMeta) csMeta.setAttribute('content', isDarkMode ? 'dark' : 'light');
   document.documentElement.style.colorScheme = isDarkMode ? 'dark' : 'light';
   const themeColor = isDarkMode ? '#080D1A' : '#F8FAFC';
   const metaTag = document.querySelector('meta[name="theme-color"]');

@@ -1,6 +1,6 @@
 {
   "name": "swiftpay-android",
-  "version": "3.0.0",
+  "version": "3.1.2",
   "private": true,
   "description": "SwiftPay — واجهة ويب/PWA في www/ داخل Capacitor، مع إضافات أندرويد أصلية في native-stage2/ (android/ يُولَّد تلقائياً).",
   "scripts": {

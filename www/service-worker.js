@@ -9,7 +9,7 @@
  * الهدف: يعمل التطبيق بالكامل offline بعد أول فتح، ويُحدَّث تلقائياً بصمت عند توفر اتصال
  */
 
-const CACHE_VERSION = 'swiftpay-v28';
+const CACHE_VERSION = 'swiftpay-v47';
 const CACHE_NAME = `${CACHE_VERSION}-shell`;
 
 // كل الملفات الأساسية التي يحتاجها التطبيق ليعمل بالكامل دون إنترنت
@@ -29,7 +29,14 @@ const APP_SHELL = [
   './assets/icons/apple-touch-icon.png',
   './assets/icons/favicon-32.png',
   './assets/icons/favicon-64.png',
-  './assets/fonts/poppins-bold-brand.woff'
+  './assets/fonts/swiftbrand-instagram-sans-condensed-bold.woff',
+  './assets/fonts/IBMPlexSansArabic-Regular.ttf',
+  './assets/fonts/IBMPlexSansArabic-Medium.ttf',
+  './assets/fonts/IBMPlexSansArabic-Bold.ttf',
+  './assets/fonts/Cairo-Regular.ttf',
+  './assets/fonts/Cairo-Medium.ttf',
+  './assets/fonts/Cairo-SemiBold.ttf',
+  './assets/fonts/Cairo-Bold.ttf'
 ];
 
 // ------------------- التثبيت: تخزين هيكل التطبيق فوراً -------------------

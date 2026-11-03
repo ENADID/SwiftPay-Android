@@ -62,7 +62,22 @@
     window.visualViewport.addEventListener('scroll', schedule);
   }
 
-  document.addEventListener('focusin', function () { schedule(); setTimeout(schedule, 150); });
+  // تمرير الحقل المركّز إلى المنطقة المرئية بعد أن تستقر مساحة النافذة (الكيبورد يحتاج ~300ms)،
+  // حتى لا تبقى حقول مثل الرمز السري خارج الجزء المرئي. أي فشل هنا لا يؤثر على الكتابة.
+  function revealFocused() {
+    try {
+      var el = document.activeElement;
+      if (!isEditable(el) || !el.scrollIntoView) return;
+      el.scrollIntoView({ block: 'center' });
+    } catch (e) { /* لا شيء */ }
+  }
+
+  document.addEventListener('focusin', function () {
+    schedule();
+    setTimeout(schedule, 150);
+    setTimeout(revealFocused, 320);
+  });
+  window.addEventListener('resize', function () { setTimeout(revealFocused, 120); });
   // بعد خروج التركيز ننتظر قليلاً: قد ينتقل مباشرة لحقل آخر
   document.addEventListener('focusout', function () { setTimeout(schedule, 120); setTimeout(schedule, 400); });
 
